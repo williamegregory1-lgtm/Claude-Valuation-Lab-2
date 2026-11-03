@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Valuation-to-Option Pricing Lab</title>
+<meta name="description" content="One call option priced three ways: analyst-belief scenarios, a CRR risk-neutral lattice, and the market quote.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+:root{
+  --page:#EDF1F4; --sheet:#F8FAFB; --ink:#0E1B2C; --ink2:#3E4C5E; --mute:#6B7787; --rule:#CCD5DE; --rule2:#DFE5EB;
+  --belief:#D9861C; --belief-ink:#9A5A0B; --belief-wash:#FBEFDD;
+  --crr:#2148C0; --crr-wash:#E4EAFA;
+  --mkt:#0E1B2C; --band:rgba(14,27,44,.10);
+  --ok:#1C7A55; --ok-wash:#E3F3EC; --bad:#B4322E; --bad-wash:#FBE8E7; --warn:#946200; --warn-wash:#FFF3D6;
+  --display:'Bricolage Grotesque',ui-sans-serif,system-ui,sans-serif; --text:'Public Sans',ui-sans-serif,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--page);color:var(--ink);font:16px/1.6 var(--text);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--crr);outline-offset:3px;border-radius:4px}
+
+/* Contract strip */
+.contract{background:var(--ink);color:#C9D3DE;font-size:13px}
+.contract-in{max-width:1320px;margin:auto;padding:10px 32px;display:flex;flex-wrap:wrap;gap:6px 28px;align-items:baseline}
+.contract strong{color:#fff;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.01em}
+.contract dl{display:flex;flex-wrap:wrap;gap:4px 22px;margin:0}
+.contract dt{display:inline;color:#8E9BAB}.contract dd{display:inline;margin:0 0 0 6px;color:#fff;font-weight:600}
+.contract .flag{margin-left:auto;color:#F3C27A}
+
+/* Hero */
+.hero{max-width:1320px;margin:auto;padding:56px 32px 36px}
+.hero h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,5.2vw,68px);line-height:1.02;letter-spacing:-.025em;margin:0;max-width:17ch}
+.hero h1 .b{color:var(--belief-ink)}
+.hero h1 .m{color:var(--ink)}
+.hero .lede{font-size:clamp(17px,1.6vw,20px);line-height:1.55;color:var(--ink2);max-width:62ch;margin:22px 0 0}
+
+/* Price line */
+.pl{margin-top:48px;position:relative;height:200px}
+.pl-axis{position:absolute;left:0;right:0;top:118px;height:2px;background:var(--ink)}
+.pl-tick{position:absolute;top:126px;font-size:12px;color:var(--mute);transform:translateX(-50%)}
+.pl-tick::before{content:"";position:absolute;left:50%;top:-8px;width:1px;height:6px;background:var(--ink2)}
+.pl-band{position:absolute;top:100px;height:38px;background:var(--band);border-left:2px solid var(--mkt);border-right:2px solid var(--mkt)}
+.pl-dot{position:absolute;top:119px;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);border:3px solid var(--page)}
+.pl.intro .pl-dot{animation:drop .7s cubic-bezier(.2,.8,.2,1) both}
+.pl-dot.belief{background:var(--belief)}.pl-dot.crr{background:var(--crr)}.pl-dot.mkt{background:var(--mkt);width:4px;height:34px;border-radius:2px;border:0}.pl.intro .pl-dot.crr{animation-delay:.15s}.pl.intro .pl-dot.mkt{animation-delay:.3s}
+@keyframes drop{from{opacity:0;transform:translate(-50%,-180%)}}
+.pl-lab{position:absolute;transform:translateX(-50%);white-space:nowrap;text-align:center;line-height:1.2}
+.pl-lab b{display:block;font-family:var(--display);font-weight:800;font-size:clamp(22px,2.6vw,34px);letter-spacing:-.02em}
+.pl-lab span{font-size:13px;color:var(--ink2)}
+.pl-lab.up{top:0}.pl-lab.down{top:150px}
+.pl-lab.belief b{color:var(--belief-ink)}.pl-lab.crr b{color:var(--crr)}.pl-lab.mkt b{color:var(--mkt)}
+.pl-gap{position:absolute;top:82px;height:14px;border:2px solid var(--ink2);border-bottom:0;border-radius:3px 3px 0 0}
+.pl-gap span{position:absolute;left:50%;top:-24px;transform:translateX(-50%);font-size:13px;font-weight:700;color:var(--ink2);background:var(--page);padding:0 8px;white-space:nowrap}
+
+/* Body */
+.wrap{max-width:1320px;margin:auto;padding:0 32px 64px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:48px}
+nav.toc{position:sticky;top:24px;align-self:start;padding-top:8px}
+nav.toc ol{list-style:none;margin:0;padding:0;counter-reset:s}
+nav.toc li{counter-increment:s}
+nav.toc a{display:flex;gap:12px;padding:8px 0;text-decoration:none;color:var(--mute);font-size:14px;line-height:1.35;border-left:3px solid transparent;padding-left:12px;margin-left:-15px}
+nav.toc a::before{content:counter(s);font-family:var(--display);font-weight:700;color:var(--rule);min-width:12px}
+nav.toc a:hover{color:var(--ink)}
+nav.toc a.on{color:var(--ink);font-weight:600;border-left-color:var(--crr)}
+nav.toc a.on::before{color:var(--crr)}
+.sheet{background:var(--sheet);border:1px solid var(--rule2);border-radius:6px;padding:8px 44px}
+section.step{padding:44px 0;border-top:1px solid var(--rule2)}
+section.step:first-child{border-top:0}
+.step-h{display:grid;grid-template-columns:auto 1fr;gap:4px 20px;align-items:baseline;margin-bottom:22px}
+.step-h .num{font-family:var(--display);font-weight:800;font-size:56px;line-height:.8;color:var(--rule);grid-row:span 2}
+.step-h h2{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:-.015em;line-height:1.15;margin:0}
+.step-h p{margin:0;color:var(--ink2);max-width:66ch}
+.two{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr);gap:36px;align-items:start}
+.plot{width:100%;height:340px}
+.plot.short{height:260px}
+.aside{font-size:14px;color:var(--ink2)}
+.aside h3{font:600 14px/1.3 var(--text);color:var(--ink);margin:0 0 10px}
+
+/* State weights */
+.states{width:100%;border-collapse:collapse;font-size:14px}
+.states th{font-weight:500;color:var(--mute);text-align:left;padding:0 8px 8px 0;font-size:12.5px}
+.states td{padding:9px 8px 9px 0;border-top:1px solid var(--rule2)}
+.states td.r,.states th.r{text-align:right}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:baseline}
+.wbar{height:8px;border-radius:4px;background:var(--belief-wash);position:relative;min-width:60px}
+.wbar i{position:absolute;inset:0 auto 0 0;border-radius:4px;background:var(--belief)}
+.states tr.zero td{color:var(--mute)}
+
+/* Checks */
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.checks li{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;padding:12px 14px;border-radius:6px;background:var(--ok-wash);font-size:14px}
+.checks li .ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--ok);color:#fff;font-weight:700;font-size:13px}
+.checks li b{display:block;color:var(--ink);font-weight:600}
+.checks li span{color:var(--ink2);font-size:13px}
+.checks li.bad{background:var(--bad-wash)}.checks li.bad .ic{background:var(--bad)}
+.checks li.warn{background:var(--warn-wash)}.checks li.warn .ic{background:var(--warn)}
+
+/* Findings */
+.findings{list-style:none;margin:0;padding:0;counter-reset:f}
+.findings li{counter-increment:f;display:grid;grid-template-columns:36px 1fr;gap:12px;padding:14px 0;border-top:1px solid var(--rule2);font-size:16px;line-height:1.55;max-width:70ch}
+.findings li:first-child{border-top:0}
+.findings li::before{content:counter(f);font-family:var(--display);font-weight:700;font-size:22px;line-height:1.2;color:var(--belief)}
+.verdict{margin-top:28px;padding:26px 28px;border-radius:6px;background:var(--ink);color:#E6ECF2}
+.verdict h3{font-family:var(--display);font-weight:700;font-size:22px;margin:0 0 10px;color:#fff}
+.verdict p{margin:0;font-size:17px;line-height:1.65;max-width:68ch}
+.verdict.empty{background:transparent;color:var(--ink2);border:2px dashed var(--rule)}
+.verdict.empty h3{color:var(--ink)}
+.verdict code{background:rgba(14,27,44,.08);padding:1px 6px;border-radius:4px;font-size:.92em}
+
+/* Sources */
+.src{width:100%;border-collapse:collapse;font-size:13.5px}
+.src th{text-align:left;font-weight:500;color:var(--mute);padding:0 12px 8px 0;font-size:12.5px}
+.src td{padding:8px 12px 8px 0;border-top:1px solid var(--rule2);color:var(--ink2)}
+.src td:first-child{color:var(--ink);font-weight:500}
+.foot{max-width:1320px;margin:auto;padding:0 32px 48px;color:var(--mute);font-size:13px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.error{max-width:720px;margin:64px auto;padding:28px 32px;background:var(--bad-wash);border-radius:6px}
+.error h2{font-family:var(--display);margin:0 0 8px}
+.loading{padding:80px 32px;text-align:center;color:var(--mute)}
+
+@media(max-width:1000px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav.toc{display:none}
+  .two{grid-template-columns:1fr;gap:24px}
+  .sheet{padding:4px 24px}
+}
+@media(max-width:640px){
+  .contract-in,.hero,.wrap,.foot{padding-left:16px;padding-right:16px}
+  .contract .flag{margin-left:0}
+  .hero{padding-top:36px}
+  .pl{height:210px}
+  .pl-lab span{font-size:12px}
+  .sheet{padding:0 16px;border-radius:0;border-left:0;border-right:0;margin:0 -16px}
+  .step-h{grid-template-columns:1fr}.step-h .num{font-size:40px;grid-row:auto}
+  .step-h h2{font-size:23px}
+  .plot{height:300px}
+  .findings li{font-size:15px}
+  .src th:nth-child(4),.src td:nth-child(4){display:none}
+}
+</style></head>
+<body>
+<div class="contract"><div class="contract-in" id="contract"></div></div>
+<main id="app"><div class="loading">Loading notebook results…</div></main>
+<div class="foot" id="foot"></div>
+<script>
+const money=v=>'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct=(x,d=1)=>(Number(x)*100).toFixed(d)+'%';
+const cap=t=>String(t).charAt(0).toUpperCase()+String(t).slice(1);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const STATE_COLORS=['#F2D3A4','#E9B467','#D9861C','#A8620E','#6B3D07'];
+const config={responsive:true,displayModeBar:false,scrollZoom:false};
+const font={family:'Public Sans, system-ui, sans-serif',size:13,color:'#3E4C5E'};
+const axis={gridcolor:'#E3E8ED',zerolinecolor:'#CCD5DE',linecolor:'#CCD5DE',tickfont:{size:12,color:'#6B7787'},automargin:true};
+const layoutBase={paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font,showlegend:false,
+  hoverlabel:{bgcolor:'#0E1B2C',bordercolor:'#0E1B2C',font:{family:font.family,size:13,color:'#fff'}},xaxis:{...axis},yaxis:{...axis}};
+const narrow=()=>innerWidth<640;
+
+fetch('model_results.json',{cache:'no-store'})
+ .then(r=>{if(!r.ok)throw Error('docs/model_results.json was not found. Run the notebook to generate it.');return r.json()})
+ .then(render)
+ .catch(e=>{app.innerHTML=`<div class="error"><h2>Results unavailable</h2><p>${e.message}</p></div>`});
+
+function render(D){
+const m=D.model,s=D.states,v=D.validation,b=D.belief_decomposition,L=D.lattice,A=D.analyst_stats;
+const I=D.interpretation||{},MA=D.maturity_alignment,src=D.sources||[];
+const belief=Number(D.valuation_weighted_expected_payoff),crr=Number(L.price),mid=Number(m.market_mid);
+const isCall=m.option_type==='call',style=`${cap(m.exercise_style)} ${m.option_type}`;
+const synthetic=src.some(r=>/synthetic/i.test(r.source));
+const asOf=src.map(r=>r.observation_date).sort().pop()||m.valuation_date;
+const inside=crr>=m.market_bid&&crr<=m.market_ask;
+const checks=[
+  [v.inside_theoretical_bounds,'Within no-arbitrage bounds','The lattice price sits between the theoretical lower and upper limits.'],
+  [v.put_call_parity_pass,'Put–call parity holds',`Residual ${Math.abs(v.parity_residual)<5e-5?'≈ 0':Number(v.parity_residual).toFixed(4)} (tolerance 0.05).`],
+  [v.valid_risk_neutral_probability,'Valid risk-neutral probability',`p* = ${Number(L.p_star).toFixed(4)}, strictly between 0 and 1.`],
+  [v.convergence_pass,'Lattice has converged',`Going from ${D.convergence?D.convergence.at(-2).steps:'N'} to ${D.convergence?D.convergence.at(-1).steps:'2N'} steps moves the price by $${Math.abs(v.convergence_gap).toFixed(4)}.`]
+];
+const nPass=checks.filter(c=>c[0]).length;
+
+contract.innerHTML=`<strong>${m.company} (${m.ticker})</strong><dl>
+ <div><dt>Contract</dt><dd>${style}</dd></div><div><dt>Strike</dt><dd>${money(m.strike)}</dd></div>
+ <div><dt>Maturity</dt><dd>${Number(m.maturity_years).toFixed(2)} yr</dd></div><div><dt>Spot</dt><dd>${money(m.spot)}</dd></div>
+ <div><dt>Valued</dt><dd>${m.valuation_date}</dd></div></dl>${synthetic?'<span class="flag">Synthetic demonstration data</span>':''}`;
+
+const gap=crr-belief;
+app.innerHTML=`
+<header class="hero">
+ <h1>Analyst beliefs value this call at <span class="b">${money(belief)}</span>. The market pays <span class="m">${money(mid)}</span>.</h1>
+ <p class="lede">A ${m.lattice_steps}-step CRR lattice prices it at ${money(crr)}, ${inside?'inside':'outside'} the ${money(m.market_bid)}–${money(m.market_ask)} quote. The ${money(Math.abs(gap))} gap between the scenario value and the lattice comes from how each method treats the stock’s future, which is what the six steps below take apart.</p>
+ <div class="pl" id="priceline" role="img" aria-label="Option values on one axis: analyst scenarios ${money(belief)}, CRR ${money(crr)}, market midpoint ${money(mid)} with bid ${money(m.market_bid)} and ask ${money(m.market_ask)}."></div>
+</header>
+<div class="wrap">
+ <nav class="toc" aria-label="Steps"><ol>
+  <li><a href="#s1">The stock’s value</a></li><li><a href="#s2">What analysts expect</a></li><li><a href="#s3">What the call pays</a></li>
+  <li><a href="#s4">Building the scenario value</a></li><li><a href="#s5">The risk-neutral price</a></li><li><a href="#s6">Why the values differ</a></li>
+ </ol></nav>
+ <div class="sheet">
+
+ <section class="step" id="s1"><div class="step-h"><span class="num">1</span><h2>The stock’s value</h2>
+  <p>Spot is ${money(m.spot)}. The DCF (${money(m.dcf_value)}), comparable companies (${money(m.comps_value)}) and the analyst median (${money(A.median)}) are the three independent views. The ${money(m.strike)} strike needs the stock to ${isCall?'rise':'fall'} ${pct(Math.abs(m.strike-m.spot)/m.spot)} before the ${m.option_type} pays anything.</p></div>
+  <div id="valuation" class="plot short"></div>
+ </section>
+
+ <section class="step" id="s2"><div class="step-h"><span class="num">2</span><h2>What analysts expect</h2>
+  <p>${A.count} analysts, ${D.analyst_horizon_months??12}-month targets from ${money(A.min)} to ${money(A.max)} (mean ${money(A.mean)}, median ${money(A.median)}). The five scenario prices are percentiles of these targets, each given a subjective weight.</p></div>
+  <div class="two"><div id="distribution" class="plot"></div>
+  <div class="aside"><h3>Five scenarios built from the targets</h3>
+   <table class="states"><thead><tr><th>Scenario</th><th class="r">Price</th><th>Weight</th></tr></thead><tbody>
+   ${s.map((z,i)=>`<tr><td><span class="swatch" style="background:${STATE_COLORS[i]}"></span>${z.state}<br><small style="color:var(--mute)">${Math.round(z.quantile*100)}th percentile</small></td><td class="r">${money(z.terminal_price)}</td><td><div class="wbar" title="${pct(z.subjective_weight,0)}"><i style="width:${z.subjective_weight/Math.max(...s.map(q=>q.subjective_weight))*100}%"></i></div><small>${pct(z.subjective_weight,0)}</small></td></tr>`).join('')}
+   </tbody></table>
+   <p style="margin:12px 0 0">Weights are disclosed beliefs, not risk-neutral probabilities.</p></div></div>
+ </section>
+
+ <section class="step" id="s3"><div class="step-h"><span class="num">3</span><h2>What the call pays</h2>
+  <p>Only scenarios ${isCall?'above':'below'} the ${money(m.strike)} strike pay anything. That’s ${pct(b.weight_positive_payoff,0)} of the weight; the other ${pct(b.weight_zero_payoff,0)} finishes worthless.</p></div>
+  <div class="two"><div id="payoff" class="plot"></div>
+  <div class="aside"><h3>Payoff at expiry</h3>
+   <table class="states"><thead><tr><th>Scenario</th><th class="r">Stock</th><th class="r">Payoff</th></tr></thead><tbody>
+   ${s.map((z,i)=>`<tr class="${z.option_payoff>0?'':'zero'}"><td><span class="swatch" style="background:${STATE_COLORS[i]}"></span>${z.state}</td><td class="r">${money(z.terminal_price)}</td><td class="r"><b>${money(z.option_payoff)}</b></td></tr>`).join('')}
+   </tbody></table><p style="margin:12px 0 0">Dot size on the chart shows each scenario’s weight.</p></div></div>
+ </section>
+
+ <section class="step" id="s4"><div class="step-h"><span class="num">4</span><h2>Building the scenario value</h2>
+  <p>Each payoff times its weight sums to ${money(b.weighted_terminal_payoff)}. Discounting at ${pct(m.risk_free_rate,2)} for ${Number(m.maturity_years).toFixed(2)} years gives ${money(belief)}.</p></div>
+  <div id="waterfall" class="plot"></div>
+ </section>
+
+ <section class="step" id="s5"><div class="step-h"><span class="num">5</span><h2>The risk-neutral price</h2>
+  <p>With ${pct(m.volatility)} ${m.volatility_type} volatility, a ${pct(m.dividend_yield,2)} dividend yield and ${m.lattice_steps} steps, the CRR lattice gives ${money(crr)}. ${nPass===4?'All four model checks pass.':`${nPass} of 4 model checks pass.`}</p></div>
+  <div class="two"><div><div id="convergence" class="plot short"></div><p class="aside" style="margin:6px 0 0">Price by lattice size. The shaded band is the market bid–ask.</p></div>
+  <ul class="checks">${checks.map(([ok,t,d])=>`<li class="${ok?'':'bad'}"><span class="ic" aria-hidden="true">${ok?'✓':'✕'}</span><div><b>${t}</b><span>${d}</span></div></li>`).join('')}
+   ${MA?`<li class="${MA.aligned?'':'warn'}"><span class="ic" aria-hidden="true">${MA.aligned?'✓':'!'}</span><div><b>${MA.aligned?'Horizons aligned':'Horizon mismatch'}</b><span>${MA.message.replace(/^WARNING:\s*/,'')}</span></div></li>`:''}
+  </ul></div>
+ </section>
+
+ <section class="step" id="s6"><div class="step-h"><span class="num">6</span><h2>Why the values differ</h2>
+  <p>${I.headline||'The scenario value and the lattice answer different questions.'}</p></div>
+  ${(I.points||[]).length?`<ol class="findings">${I.points.map(p=>`<li>${p}</li>`).join('')}</ol>`:''}
+  ${D.conclusion?`<div class="verdict"><h3>Conclusion</h3><p>${D.conclusion}</p></div>`
+   :`<div class="verdict empty"><h3>Conclusion not written yet</h3><p>Add 2–4 sentences to <code>memo_conclusion</code> in notebook section 8, then re-run. Cover the model, the evidence, the main limitation, and what would change your view.</p></div>`}
+ </section>
+
+ ${src.length?`<section class="step" id="sources"><div class="step-h"><span class="num" aria-hidden="true">&nbsp;</span><h2>Inputs and sources</h2><p>Every number above is generated by the notebook from these inputs.</p></div>
+  <table class="src"><thead><tr><th>Input</th><th>Value</th><th>Date</th><th>Source</th><th>Method</th></tr></thead><tbody>
+  ${src.map(r=>`<tr><td>${r.input_name}</td><td>${Number(r.value)<1?pct(r.value,2):money(r.value)}</td><td>${r.observation_date}</td><td>${r.source}</td><td>${r.method_or_note}</td></tr>`).join('')}
+  </tbody></table></section>`:''}
+ </div>
+</div>`;
+
+foot.innerHTML=`<span>Generated from CSV inputs by the executed Python notebook. Values are never typed by hand.</span><span>${synthetic?'Synthetic demonstration data, not a real company.':`Inputs as of ${asOf}.`}</span>`;
+
+priceline.classList.add('intro');drawPriceLine();setTimeout(()=>priceline.classList.remove('intro'),1400);addEventListener('resize',drawPriceLine);
+
+/* 1 Valuation dot plot */
+const ve=Object.entries(D.valuation),vn=ve.map(x=>x[0]),vv=ve.map(x=>Number(x[1]));
+const vmin=Math.min(...vv,m.spot,m.strike),vmax=Math.max(...vv,m.spot,m.strike),vp=Math.max((vmax-vmin)*.18,3);
+Plotly.newPlot('valuation',[{type:'scatter',mode:'markers+text',x:vv,y:vn,text:vv.map(money),textposition:'middle right',cliponaxis:false,
+  textfont:{size:13,color:'#0E1B2C'},marker:{size:16,color:vn.map(n=>/market/i.test(n)?'#0E1B2C':'#6B7787'),line:{color:'#F8FAFB',width:2}},
+  hovertemplate:'<b>%{y}</b><br>%{x:$,.2f} per share<extra></extra>'}],
+ {...layoutBase,margin:{l:10,r:70,t:30,b:40},xaxis:{...axis,tickprefix:'$',range:[vmin-vp,vmax+vp],zeroline:false},yaxis:{...axis,autorange:'reversed',showgrid:false},
+  shapes:[{type:'line',xref:'x',yref:'paper',x0:m.strike,x1:m.strike,y0:-.05,y1:1.05,line:{color:'#D9861C',width:2,dash:'dot'}}],
+  annotations:[{x:m.strike,y:1.12,xref:'x',yref:'paper',text:`Strike ${money(m.strike)}`,showarrow:false,font:{size:12,color:'#9A5A0B'}}]},config);
+
+/* 2 Distribution with scenario lines */
+const T=D.analyst_targets.map(Number).sort((a,b)=>a-b);
+const jit=T.map((_,i)=>((i*37)%11)/10-.5);
+const tmin=Math.min(...T),tmax=Math.max(...T),tp=Math.max((tmax-tmin)*.08,2);
+Plotly.newPlot('distribution',[
+  {type:'scatter',mode:'markers',x:T,y:jit,marker:{size:12,color:'rgba(14,27,44,.55)',line:{color:'#F8FAFB',width:1.5}},hovertemplate:'Analyst target <b>%{x:$,.2f}</b><extra></extra>'},
+  {type:'scatter',mode:'markers',x:s.map(z=>z.terminal_price),y:s.map(()=>-1.05),marker:{symbol:'triangle-up',size:14,color:STATE_COLORS,line:{color:'#6B3D07',width:1}},
+   customdata:s.map(z=>[z.state,Math.round(z.quantile*100)]),hovertemplate:'<b>%{customdata[0]}</b> · %{customdata[1]}th pct<br>%{x:$,.2f}<extra></extra>'}],
+ {...layoutBase,margin:{l:10,r:10,t:36,b:46},xaxis:{...axis,tickprefix:'$',range:[tmin-tp,tmax+tp],title:{text:`${D.analyst_horizon_months??12}-month price target`,font:{size:12}}},
+  yaxis:{visible:false,range:[-1.35,.95]},
+  shapes:[
+   ...s.map((z,i)=>({type:'line',x0:z.terminal_price,x1:z.terminal_price,y0:-.95,y1:.75,line:{color:STATE_COLORS[i],width:2}})),
+   {type:'line',x0:A.median,x1:A.median,yref:'paper',y0:.86,y1:.96,line:{color:'#0E1B2C',width:2}},
+   {type:'line',x0:m.strike,x1:m.strike,y0:-1.3,y1:.9,line:{color:'#0E1B2C',width:1.5,dash:'dot'}}],
+  annotations:[{x:m.strike,y:.95,text:`Strike ${money(m.strike)}`,showarrow:false,yanchor:'bottom',font:{size:12,color:'#0E1B2C'}}]},config);
+
+/* 3 Payoff */
+const sp=s.map(z=>Number(z.terminal_price)),xlo=Math.min(...sp,m.strike),xhi=Math.max(...sp,m.strike),pr=Math.max(xhi-xlo,10);
+const xs=Math.max(0,xlo-pr*.25),xe=xhi+pr*.2,X=[];for(let q=xs;q<=xe+1e-9;q+=(xe-xs)/160)X.push(q);
+const Y=X.map(q=>isCall?Math.max(q-m.strike,0):Math.max(m.strike-q,0));
+Plotly.newPlot('payoff',[
+  {type:'scatter',mode:'lines',x:X,y:Y,line:{color:'#0E1B2C',width:2.5},hovertemplate:'Stock %{x:$,.2f}<br>Payoff %{y:$,.2f}<extra></extra>'},
+  {type:'scatter',mode:'markers',x:sp,y:s.map(z=>z.option_payoff),marker:{size:s.map(z=>12+z.subjective_weight*70),color:STATE_COLORS,line:{color:'#6B3D07',width:1}},
+   customdata:s.map(z=>[z.state,pct(z.subjective_weight,0)]),hovertemplate:'<b>%{customdata[0]}</b> (%{customdata[1]})<br>Stock %{x:$,.2f}<br>Payoff %{y:$,.2f}<extra></extra>'}],
+ {...layoutBase,margin:{l:10,r:16,t:30,b:46},xaxis:{...axis,tickprefix:'$',range:[xs,xe],title:{text:'Stock price at expiry',font:{size:12}},...(narrow()?{nticks:5}:{})},
+  yaxis:{...axis,tickprefix:'$',rangemode:'tozero',title:{text:'Call payoff',font:{size:12}}},
+  shapes:[{type:'line',x0:m.strike,x1:m.strike,yref:'paper',y0:0,y1:1,line:{color:'#D9861C',width:1.5,dash:'dot'}}],
+  annotations:[{x:m.strike,y:1,yref:'paper',text:`Strike ${money(m.strike)}`,showarrow:false,xanchor:isCall?'right':'left',xshift:isCall?-6:6,yanchor:'top',font:{size:12,color:'#9A5A0B'}}]},config);
+
+/* 4 Waterfall */
+const disc=belief-Number(b.weighted_terminal_payoff);
+Plotly.newPlot('waterfall',[{type:'waterfall',orientation:'v',
+  x:[...s.map(z=>z.state),'Weighted payoff','Discounting','Scenario value'],
+  measure:[...s.map(()=>'relative'),'total','relative','total'],
+  y:[...s.map(z=>Number(z.weighted_payoff)),0,disc,0],
+  text:[...s.map(z=>money(z.weighted_payoff)),money(b.weighted_terminal_payoff),'−'+money(Math.abs(disc)),money(belief)],
+  textposition:'outside',cliponaxis:false,textfont:{size:13,color:'#0E1B2C'},
+  connector:{line:{color:'#CCD5DE',width:1}},
+  increasing:{marker:{color:'#D9861C'}},decreasing:{marker:{color:'#6B7787'}},totals:{marker:{color:'#9A5A0B'}},
+  hovertemplate:'<b>%{x}</b><br>%{text}<extra></extra>'}],
+ {...layoutBase,margin:{l:10,r:10,t:30,b:50},xaxis:{...axis,tickfont:{size:narrow()?10:12,color:'#3E4C5E'}},yaxis:{...axis,tickprefix:'$',tickformat:'.2f',rangemode:'tozero'}},config);
+
+/* 5 Convergence */
+if(D.convergence)Plotly.newPlot('convergence',[{type:'scatter',mode:'lines+markers',x:D.convergence.map(c=>c.steps),y:D.convergence.map(c=>c.price),
+  line:{color:'#2148C0',width:3},marker:{size:9,color:'#2148C0',line:{color:'#F8FAFB',width:2}},hovertemplate:'%{x} steps<br><b>%{y:$,.4f}</b><extra></extra>'}],
+ {...layoutBase,margin:{l:10,r:10,t:16,b:44},xaxis:{...axis,type:'log',tickvals:D.convergence.map(c=>c.steps),title:{text:'Lattice steps',font:{size:12}}},
+  yaxis:{...axis,tickprefix:'$',tickformat:'.2f',range:[Math.min(m.market_bid,...D.convergence.map(c=>c.price))-.1,Math.max(m.market_ask,...D.convergence.map(c=>c.price))+.1]},
+  shapes:[{type:'rect',xref:'paper',x0:0,x1:1,y0:m.market_bid,y1:m.market_ask,fillcolor:'rgba(14,27,44,.07)',line:{width:0},layer:'below'},
+          {type:'line',xref:'paper',x0:0,x1:1,y0:mid,y1:mid,line:{color:'#0E1B2C',width:1,dash:'dot'},layer:'below'}]},config);
+
+/* Section highlight in the side list */
+const links=[...document.querySelectorAll('nav.toc a')];
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id))}}),{rootMargin:'-30% 0px -60% 0px'});
+document.querySelectorAll('section.step[id^="s"]').forEach(x=>io.observe(x));
+
+function drawPriceLine(){
+  const el=document.getElementById('priceline');if(!el)return;
+  const hi=Math.max(m.market_ask,crr,belief,mid)*1.15,step=hi>40?10:hi>15?5:hi>6?2:1,max=Math.ceil(hi/step)*step;
+  const X=v=>v/max*100,clamp=(p,w)=>Math.min(Math.max(p,w),100-w);
+  const w=narrow()?14:7;
+  let ticks='';for(let t=0;t<=max+1e-9;t+=step)ticks+=`<span class="pl-tick" style="left:${X(t)}%">${money(t).replace('.00','')}</span>`;
+  const lo=Math.min(belief,crr),hiV=Math.max(belief,crr);
+  el.innerHTML=`<div class="pl-axis"></div>${ticks}
+   <div class="pl-band" style="left:${X(m.market_bid)}%;width:${X(m.market_ask)-X(m.market_bid)}%"></div>
+   <div class="pl-gap" style="left:${X(lo)}%;width:${X(hiV)-X(lo)}%"><span>${money(Math.abs(gap))} gap</span></div>
+   <div class="pl-dot belief" style="left:${X(belief)}%"></div><div class="pl-dot crr" style="left:${X(crr)}%"></div><div class="pl-dot mkt" style="left:${X(mid)}%"></div>
+   <div class="pl-lab up belief" style="left:${clamp(X(belief),w)}%"><b>${money(belief)}</b><span>Analyst scenarios</span></div>
+   <div class="pl-lab up crr" style="left:${clamp(X(crr),w)}%"><b>${money(crr)}</b><span>CRR lattice</span></div>
+   <div class="pl-lab down mkt" style="left:${clamp(X(mid),narrow()?30:12)}%"><b>${money(mid)}</b><span>Market mid · ${money(m.market_bid)}–${money(m.market_ask)}</span></div>`;
+}
+}
+</script></body></html>
